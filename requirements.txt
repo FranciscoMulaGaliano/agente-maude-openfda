@@ -1,0 +1,7 @@
+requests==2.34.2
+google-genai==2.29.0
+python-dotenv==1.2.4
+pydantic==2.13.5
+streamlit==1.65.0
+pandas==3.0.6
+altair==6.3.0

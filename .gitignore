@@ -1,0 +1,12 @@
+# Entorno virtual (se recrea con: python -m venv .venv)
+.venv/
+
+# Claves y secretos: NUNCA se suben a GitHub
+.env
+
+# Instrucciones personales para Claude Code: no se publican
+CLAUDE.md
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc

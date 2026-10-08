@@ -1,0 +1,8 @@
+# Configuración de Streamlit: aspecto fijo (tema claro) para que las capturas salgan siempre igual
+
+[theme]
+base = "light"
+primaryColor = "#2a78d6"
+
+[client]
+toolbarMode = "minimal"   # oculta el botón "Deploy" y el menú
