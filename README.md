@@ -59,8 +59,8 @@ Necesitas Python 3.10 o superior (desarrollado y probado con Python 3.14) y una 
 
 1. Clona el repositorio y entra en la carpeta:
    ```
-   git clone https://github.com/TU_USUARIO/TU_REPOSITORIO.git
-   cd TU_REPOSITORIO
+   git clone https://github.com/FranciscoMulaGaliano/agente-maude-openfda.git
+   cd agente-maude-openfda
    ```
 2. Crea y activa un entorno virtual (en Windows con PowerShell):
    ```
@@ -116,7 +116,7 @@ Este proyecto lo construí paso a paso con la ayuda de **Claude Code** (Anthropi
 
 ## Autor
 
-Paco — ingeniero biomédico (Universidad de Málaga). Field Service Engineer especializado en equipos de diagnóstico clínico de Roche Diagnostics y Johnson & Johnson (mantenimiento preventivo y correctivo). Proyecto de portfolio para aprender a combinar APIs públicas, LLMs y visualización de datos.
+**Francisco Mula Galiano** — ingeniero biomédico (Universidad de Málaga). [LinkedIn](https://www.linkedin.com/in/francisco-mula-galiano-/). Field Service Engineer especializado en equipos de diagnóstico clínico de Roche Diagnostics y Johnson & Johnson (mantenimiento preventivo y correctivo). Proyecto de portfolio para aprender a combinar APIs públicas, LLMs y visualización de datos.
 
 Este proyecto es personal y no tiene relación con ninguna de esas empresas. Solo usa datos públicos de openFDA.
 
