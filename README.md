@@ -17,6 +17,10 @@ Escribes una pregunta en español y un agente la traduce a una consulta de la AP
    - La búsqueda exacta que generó el agente (para poder revisarla).
    - Un gráfico de barras, con las 3 primeras categorías destacadas.
    - Un resumen de 3-4 frases en español.
+   - Tres KPIs temporales, calculados solo con openFDA (sin LLM):
+     - **Tendencia mensual:** gráfico de línea con los informes de cada mes (máximo 12 meses).
+     - **Variación interanual:** cambio respecto al mismo periodo del año anterior.
+     - **% de informes graves:** porcentaje de informes del periodo con lesión (`Injury`) o muerte (`Death`).
 
 ## Cómo funciona
 
@@ -34,7 +38,10 @@ Pregunta en español
         │          y Gemini redacta el resumen
         │          └─ el código comprueba que las cifras del resumen existen en los datos
         ▼
- app.py (Streamlit) ──► tarjetas + gráfico + resumen
+ kpis.py ──► 2 llamadas más a openFDA, sin LLM: tendencia mensual,
+        │    variación interanual y % de informes con lesión o muerte
+        ▼
+ app.py (Streamlit) ──► tarjetas + gráficos + resumen + KPIs
 ```
 
 | Archivo | Para qué sirve |
@@ -42,6 +49,7 @@ Pregunta en español
 | `explorar_api.py` | Exploración de la API sin IA: ver qué datos devuelve openFDA. |
 | `traductor.py` | Pregunta en español → parámetros de la API (con validación). |
 | `resumidor.py` | Limpieza de datos, total real, traducción de categorías y resumen con comprobación de cifras. |
+| `kpis.py` | KPIs temporales con solo openFDA: informes por mes, variación interanual y % de informes con lesión o muerte. |
 | `app.py` | Interfaz web con Streamlit. |
 
 ### Decisiones de diseño
@@ -52,6 +60,9 @@ Pregunta en español
 - **Total real, no suma de filas.** El total de informes se consulta a la API sin agrupar, porque un mismo informe puede aparecer en varias categorías.
 - **Limpieza de datos en código, no en el LLM.** Las variantes de un fabricante (`BECKMAN COULTER, INC.`, `INC`, `INC.`) se unen con reglas fijas.
 - **Traducción de categorías con un diccionario fijo** (43 términos habituales). Lo que no esté en el diccionario se muestra en inglés.
+- **Los KPIs no usan LLM.** Son recuentos de la API, así que no hay nada que inventar ni que comprobar.
+- **Pocas llamadas a la API.** Una sola consulta trae los informes por día de dos años (el periodo y el mismo periodo del año anterior): de ahí salen la línea mensual, el total y la variación. Una segunda consulta cuenta los informes con lesión o muerte.
+- **La variación se muestra sin colores de bueno o malo.** Más informes no significa más fallos, así que la tarjeta no usa verde ni rojo.
 
 ## Instalación
 
@@ -90,6 +101,7 @@ También se puede probar sin interfaz:
 
 ```
 python explorar_api.py    # explora la API de openFDA, sin IA
+python kpis.py            # KPIs de una búsqueda de ejemplo, sin IA
 python resumidor.py       # flujo completo en la terminal
 ```
 
@@ -103,6 +115,9 @@ El modelo de Gemini se cambia en una sola línea: la constante `MODELO` de `trad
 - **Un filtro de dispositivo muy sencillo.** El agente busca por nombre genérico (por ejemplo "chemistry analyzer"). Otras formas de nombrar el mismo tipo de equipo pueden quedar fuera. Usar el código de producto de la FDA sería más fiable.
 - **La comprobación de cifras no es completa.** Detecta números que no están en los datos, pero no detecta una cifra real atribuida a la categoría equivocada.
 - **Cuota gratuita de Gemini limitada.** Cada pregunta usa 2 llamadas, y el nivel gratuito tiene un límite diario por modelo que puede agotarse. Las preguntas repetidas se guardan en caché durante 1 hora.
+- **Límite de openFDA sin API key.** Cada pregunta nueva hace 4 llamadas a openFDA (ranking, total, serie mensual y recuento de graves). Sin clave, openFDA permite unas 1.000 al día por IP, es decir, unas 250 preguntas. Con una API key gratuita el límite sube a 120.000 al día.
+- **Los KPIs tienen un alcance limitado.** Cubren como máximo los últimos 12 meses de la búsqueda. Si la pregunta no trae fechas, se usan los últimos 12 meses. Si el periodo acaba a mitad de mes, el último punto de la línea está incompleto (la gráfica lo avisa). Si la búsqueda tiene un filtro de fecha poco habitual, no se calculan.
+- **El % de graves depende de cómo se notifica.** Solo cuenta los informes con tipo de evento `Injury` o `Death`. En equipos de laboratorio suele ser muy bajo.
 - **Solo consulta el endpoint `device/event`** y solo los campos permitidos en `traductor.py`.
 - **Proyecto educativo.** No debe usarse para tomar decisiones médicas ni regulatorias. openFDA avisa de que sus datos no están validados.
 
