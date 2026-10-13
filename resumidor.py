@@ -16,28 +16,25 @@ import time
 from google import genai
 from google.genai import errors, types
 
-# Reutilizamos lo de los pasos anteriores
 from explorar_api import consultar_api, mostrar_ranking
 from traductor import MAX_REINTENTOS_SERVIDOR, MODELO, ConsultaFDA, traducir_pregunta
 
-MAX_INTENTOS_RESUMEN = 2  # veces que dejamos a Gemini corregir un resumen con cifras dudosas
+MAX_INTENTOS_RESUMEN = 2  # correcciones si el resumen trae cifras dudosas
 CAMPO_FABRICANTE = "device.manufacturer_d_name.exact"
 CAMPO_MARCA = "device.brand_name.exact"
 CAMPOS_SIN_TRADUCIR = {CAMPO_FABRICANTE, CAMPO_MARCA}  # nombres propios: no se traducen
-FILAS_A_DESCARGAR = 100  # para fabricantes pedimos más filas y recortamos después de limpiar
+FILAS_A_DESCARGAR = 100  # fabricantes: pedimos más filas y recortamos tras limpiar
 
-# Terminaciones legales que no forman parte del nombre real de la empresa
+# Terminaciones legales que no forman parte del nombre de la empresa
 SUFIJOS_LEGALES = {"INC", "LLC", "LTD", "CORP", "CO", "GMBH", "SA", "AG"}
 
 # Diccionario fijo inglés -> español de las categorías más comunes de MAUDE.
-# Las que no estén aquí se muestran en inglés. Para añadir una, basta con una línea nueva.
+# Las que no estén aquí se muestran en inglés.
 TRADUCCIONES = {
-    # Tipos de evento
     "Malfunction": "Fallo de funcionamiento",
     "Injury": "Lesión",
     "Death": "Muerte",
     "Other": "Otro",
-    # Resultados analíticos (muy frecuentes en analizadores de laboratorio)
     "High Test Results": "Resultados de prueba altos",
     "Low Test Results": "Resultados de prueba bajos",
     "Non Reproducible Results": "Resultados no reproducibles",
@@ -46,19 +43,16 @@ TRADUCCIONES = {
     "Incorrect, Inadequate or Imprecise Result or Readings": "Resultado o lecturas incorrectos, inadecuados o imprecisos",
     "Incorrect Measurement": "Medición incorrecta",
     "Low Readings": "Lecturas bajas",
-    # Software y comunicaciones
     "Computer Software Problem": "Problema de software",
     "Computer Operating System Problem": "Problema del sistema operativo",
     "Communication or Transmission Problem": "Problema de comunicación o transmisión",
     "Wireless Communication Problem": "Problema de comunicación inalámbrica",
     "Unintended Application Program Shut Down": "Cierre no intencionado del programa",
     "Inappropriate or Unexpected Reset": "Reinicio inapropiado o inesperado",
-    # Pantalla, salida y controles
     "Output Problem": "Problema de salida",
     "Display or Visual Feedback Problem": "Problema de pantalla o indicación visual",
     "No Display/Image": "Sin pantalla o imagen",
     "Key or Button Unresponsive/not Working": "Tecla o botón que no responde",
-    # Mecánicos, fluidos y materiales
     "Mechanical Problem": "Problema mecánico",
     "Suction Problem": "Problema de aspiración",
     "Leak/Splash": "Fuga o salpicadura",
@@ -70,20 +64,18 @@ TRADUCCIONES = {
     "Material Deformation": "Deformación del material",
     "Detachment of Device or Device Component": "Desprendimiento del dispositivo o de un componente",
     "Contamination": "Contaminación",
-    # Alimentación eléctrica
     "Battery Problem": "Problema de batería",
     "Charging Problem": "Problema de carga",
     "Failure to Charge": "Fallo de carga",
     "Power Problem": "Problema de alimentación eléctrica",
     "Electrical /Electronic Property Problem": "Problema de propiedades eléctricas o electrónicas",
-    # Informes sin problema concreto
     "Use of Device Problem": "Problema de uso del dispositivo",
     "Adverse Event Without Identified Device or Use Problem": "Evento adverso sin problema identificado del dispositivo o de su uso",
     "No Apparent Adverse Event": "Sin evento adverso aparente",
     "Insufficient Device Problem Information": "Información insuficiente sobre el problema del dispositivo",
     "Appropriate Device Problem Term/Code Not Available": "Término o código de problema adecuado no disponible",
 }
-# Versión en minúsculas, para que mayúsculas/minúsculas distintas no impidan encontrar el término
+# En minúsculas, para encontrar el término aunque cambien las mayúsculas
 TRADUCCIONES_MINUSCULAS = {ingles.lower(): espanol for ingles, espanol in TRADUCCIONES.items()}
 
 PROMPT_RESUMEN = """
@@ -113,9 +105,6 @@ Reglas estrictas:
 """
 
 
-# --------------------------------------------------------------------------
-# 0) Formato de números
-# --------------------------------------------------------------------------
 def formatear_miles(numero: int) -> str:
     """1219 -> '1.219' (formato español)."""
     return f"{numero:,}".replace(",", ".")
@@ -128,18 +117,15 @@ def formatear_cifras_en_texto(texto: str, anios: set[int]) -> str:
         numero = int(coincidencia.group(0))
         return coincidencia.group(0) if numero in anios else formatear_miles(numero)
 
-    # \b\d{4,}\b solo atrapa números "pegados" (2094); los ya formateados (2.094) no coinciden
+    # \b\d{4,}\b solo atrapa números pegados (2094), no los ya formateados (2.094)
     return re.sub(r"\b\d{4,}\b", reemplazo, texto)
 
 
-# --------------------------------------------------------------------------
-# 1) Limpieza de nombres y traducción de categorías
-# --------------------------------------------------------------------------
 def limpiar_nombre_fabricante(nombre: str) -> str:
     """'BECKMAN COULTER, INC.' y 'Beckman Coulter Inc' -> 'BECKMAN COULTER'."""
-    texto = re.sub(r"[.,]", " ", nombre.upper())  # quita puntos y comas
+    texto = re.sub(r"[.,]", " ", nombre.upper())
     palabras = texto.split()
-    # Quitamos terminaciones legales del final (INC, LLC...), pero nunca dejamos el nombre vacío
+    # Quitamos INC, LLC... del final, pero sin dejar el nombre vacío
     while len(palabras) > 1 and palabras[-1] in SUFIJOS_LEGALES:
         palabras.pop()
     return " ".join(palabras)
@@ -173,8 +159,8 @@ def traducir_categorias(filas: list[dict], campo_count: str) -> list[dict]:
 
 def consultar_y_limpiar(consulta: ConsultaFDA) -> list[dict]:
     """Consulta openFDA y devuelve el ranking ya limpio y recortado a 'limit' filas."""
-    # Para fabricantes pedimos muchas filas: así las variantes de un mismo nombre
-    # que estén más abajo en la lista también se suman.
+    # Fabricantes: pedimos muchas filas para sumar también las variantes de un
+    # mismo nombre que queden más abajo.
     es_fabricante = consulta.count == CAMPO_FABRICANTE
     limite_api = FILAS_A_DESCARGAR if es_fabricante else consulta.limit
 
@@ -194,9 +180,6 @@ def contar_total(consulta: ConsultaFDA) -> int | None:
     return datos["meta"]["results"]["total"]
 
 
-# --------------------------------------------------------------------------
-# 2) Comprobación de cifras
-# --------------------------------------------------------------------------
 def numeros_en_texto(texto: str) -> set[int]:
     """Extrae los números de un texto. '1.219', '1,219' y '1219' valen todos 1219."""
     encontrados = re.findall(r"\d+(?:[.,]\d+)*", texto)
@@ -214,7 +197,6 @@ def numeros_permitidos(consulta: ConsultaFDA, filas: list[dict], total: int | No
     if total is not None:
         permitidos.add(total)  # el total REAL; la suma de las filas NO está permitida
 
-    # Años (2025) y fechas completas (20250101) de la búsqueda
     permitidos |= anios_de_la_busqueda(consulta)
     permitidos |= {int(fecha) for fecha in re.findall(r"\d{8}", consulta.search)}
 
@@ -223,9 +205,6 @@ def numeros_permitidos(consulta: ConsultaFDA, filas: list[dict], total: int | No
     return permitidos
 
 
-# --------------------------------------------------------------------------
-# 3) Resumen con Gemini
-# --------------------------------------------------------------------------
 def pedir_texto_a_gemini(cliente: genai.Client, mensaje: str) -> str:
     """Llama a Gemini y devuelve texto libre. Reintenta si el servidor está saturado."""
     for intento in range(1, MAX_REINTENTOS_SERVIDOR + 1):
@@ -253,7 +232,7 @@ def resumir(
     """Devuelve (resumen, cifras_dudosas). Si 'cifras_dudosas' está vacía, todo cuadra con los datos."""
     cliente = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-    # Las cifras ya van en formato español: así el LLM las copia tal cual
+    # Cifras ya en formato español: el LLM las copia tal cual
     lineas_datos = "\n".join(f"- {fila['term']}: {formatear_miles(fila['count'])}" for fila in filas)
     linea_total = (
         f"TOTAL real de informes que cumplen la búsqueda: {formatear_miles(total)}"
@@ -285,12 +264,9 @@ def resumir(
             "Reescríbelo usando únicamente las cifras de los datos."
         )
 
-    return formatear_cifras_en_texto(resumen, anios), dudosas  # último intento, con su aviso
+    return formatear_cifras_en_texto(resumen, anios), dudosas
 
 
-# --------------------------------------------------------------------------
-# Programa principal
-# --------------------------------------------------------------------------
 def main() -> None:
     pregunta = input("Pregunta: ").strip()
 

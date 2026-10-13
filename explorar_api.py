@@ -11,8 +11,6 @@ import requests
 
 BASE_URL = "https://api.fda.gov/device/event.json"
 
-# Búsqueda: dispositivos cuyo nombre genérico contiene "analyzer",
-# recibidos por la FDA durante 2025.
 BUSQUEDA = 'device.generic_name:analyzer AND date_received:[20250101 TO 20251231]'
 
 
@@ -20,12 +18,12 @@ def consultar_api(params: dict) -> dict | None:
     """Hace la petición a openFDA y devuelve el JSON, o None si no hay resultados."""
     respuesta = requests.get(BASE_URL, params=params, timeout=30)
 
-    # openFDA devuelve 404 cuando la búsqueda no encuentra nada
+    # 404 = búsqueda sin resultados, no un fallo
     if respuesta.status_code == 404:
         print("  (sin resultados para esta búsqueda)")
         return None
 
-    respuesta.raise_for_status()  # lanza error si hay otro problema (400, 500...)
+    respuesta.raise_for_status()
     return respuesta.json()
 
 
@@ -66,12 +64,11 @@ def mostrar_ranking(titulo: str, resultados: list[dict]) -> None:
 def main() -> None:
     print("Consultando openFDA...\n")
 
-    # 1) Unos cuantos informes completos, para ver la estructura
     eventos = obtener_eventos(BUSQUEDA, limite=3)
     for i, evento in enumerate(eventos, start=1):
         mostrar_evento(evento, i)
 
-    # 2) Rankings: la API cuenta por nosotros
+    # Que cuente la API: no descargamos informes para contarlos
     mostrar_ranking(
         "Tipos de evento",
         contar_por_campo(BUSQUEDA, "event_type.exact"),

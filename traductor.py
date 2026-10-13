@@ -20,16 +20,15 @@ from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel
 
-# Reutilizamos lo que ya escribimos en el paso 1
 from explorar_api import consultar_api, mostrar_ranking
 
-load_dotenv()  # lee el archivo .env y deja GEMINI_API_KEY disponible
+load_dotenv()
 
-MODELO = "gemini-3.5-flash"
-MAX_INTENTOS = 2  # veces que dejamos a Gemini corregir una consulta inválida
-MAX_REINTENTOS_SERVIDOR = 4  # veces que probamos si el servidor de Google está saturado
+MODELO = "gemini-3.1-flash-lite"
+MAX_INTENTOS = 2  # correcciones que damos a Gemini si la consulta no es válida
+MAX_REINTENTOS_SERVIDOR = 4  # por si el servidor de Google está saturado
 
-# --- Listas de campos válidos: nuestra "red de seguridad" contra campos inventados ---
+# Campos permitidos: red de seguridad contra campos inventados por el LLM
 CAMPOS_BUSQUEDA = {
     "device.generic_name",
     "device.brand_name",
@@ -46,7 +45,7 @@ CAMPOS_COUNT = {
     "product_problems.exact",
 }
 
-# --- Instrucciones para el LLM: le explicamos los datos, porque él no los conoce ---
+# Prompt: el LLM no conoce los campos de MAUDE, así que se los explicamos
 PROMPT_SISTEMA = f"""
 Eres un traductor de preguntas en español a consultas de la API openFDA, endpoint device/event (base MAUDE).
 Hoy es {date.today().isoformat()}.
@@ -93,7 +92,7 @@ def validar_consulta(consulta: ConsultaFDA) -> str | None:
     if consulta.count not in CAMPOS_COUNT:
         return f"count '{consulta.count}' no es válido. Opciones: {sorted(CAMPOS_COUNT)}"
 
-    # Buscamos todos los "campo:" que aparecen en la búsqueda y comprobamos que existan
+    # Todos los "campo:" de la búsqueda deben existir
     campos_usados = re.findall(r"([A-Za-z_.]+):", consulta.search)
     for campo in campos_usados:
         if campo not in CAMPOS_BUSQUEDA:
@@ -114,18 +113,18 @@ def llamar_a_gemini(cliente: genai.Client, mensaje: str) -> str:
                 contents=mensaje,
                 config=types.GenerateContentConfig(
                     system_instruction=PROMPT_SISTEMA,
-                    response_mime_type="application/json",  # fuerza salida JSON
-                    response_schema=ConsultaFDA,  # con esta forma exacta
-                    temperature=0,  # sin creatividad: queremos respuestas estables
+                    response_mime_type="application/json",
+                    response_schema=ConsultaFDA,
+                    temperature=0,  # sin creatividad: respuestas estables
                 ),
             )
             return respuesta.text
         except errors.ServerError as error:
-            # Solo reintentamos errores del servidor. Otros (clave mala, modelo
-            # inexistente...) no se arreglan esperando, así que se propagan.
+            # Solo reintentamos errores del servidor: los demás (clave mala,
+            # modelo inexistente...) no se arreglan esperando.
             if intento == MAX_REINTENTOS_SERVIDOR:
                 raise
-            espera = 2**intento  # 2, 4, 8 segundos
+            espera = 2**intento  # 2, 4, 8 s
             print(f"  (Gemini saturado [{error.code}]; reintento {intento} en {espera} s)")
             time.sleep(espera)
 
